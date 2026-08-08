@@ -1,4 +1,4 @@
-import type { GroupKind, MediaGroup, MediaType, Scene } from "../types";
+import type { GroupKind, MediaGroup, MediaType } from "../types";
 
 export function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -105,29 +105,6 @@ export function defaultGroupName(kind: GroupKind, groups: MediaGroup[]): string 
   const prefix = kind === "playlist" ? "Playlist" : "Collection";
   const n = groups.filter((g) => g.kind === kind).length + 1;
   return `${prefix} ${n}`;
-}
-
-const SCENE_LABELS = ["Scene 1", "Chapter 2", "Scene 3", "Midpoint", "Scene 5", "Plot twist", "Scene 7", "Climax", "Scene 9", "Resolution"];
-
-/**
- * Deterministic, simulated scene boundaries for a media item.
- * (Placeholder for real on-device scene detection.)
- */
-export function computeScenes(id: string, duration: number, count = 10): Scene[] {
-  if (!Number.isFinite(duration) || duration <= 0) return [];
-  let seed = 0;
-  for (let i = 0; i < id.length; i++) seed = (seed * 33 + id.charCodeAt(i)) % 997;
-  const scenes: Scene[] = [];
-  const step = duration / count;
-  let t = step;
-  for (let i = 0; i < count - 1; i++) {
-    seed = (seed * 31 + 7) % 61;
-    const factor = 0.7 + (seed / 61) * 0.9;
-    t += step * factor;
-    if (t > duration - 20) break;
-    scenes.push({ start: Math.round(t), label: SCENE_LABELS[i % SCENE_LABELS.length] });
-  }
-  return scenes;
 }
 
 /** Best-effort poster initials (up to 3 chars) from a title. */

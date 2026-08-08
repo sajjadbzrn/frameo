@@ -1,4 +1,4 @@
-import { useApp } from "../store";
+import { useUI } from "../store";
 import { Icon, type IconName } from "./Icon";
 
 const KIND_ICON: Record<string, IconName> = {
@@ -8,7 +8,7 @@ const KIND_ICON: Record<string, IconName> = {
 };
 
 export function Toasts() {
-  const { toasts, dismissToast } = useApp();
+  const { toasts, dismissToast } = useUI();
   return (
     <div className="toasts" aria-live="polite">
       {toasts.map((t) => (

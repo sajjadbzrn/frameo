@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useApp } from "../store";
+import { useUI, useLibrary, usePlayback } from "../store";
 import { useAddMedia } from "../lib/useAddMedia";
 import { confirmDialog } from "../lib/utils";
 import { Icon } from "./Icon";
@@ -17,17 +17,18 @@ const HEADINGS: Record<string, string> = {
 
 export function LibraryView({ hidden }: { hidden: boolean }) {
   const {
-    items,
     filter,
     setFilter,
     search,
-    groups,
-    deleteGroup,
-    playItem,
-    addToQueue,
     setView,
     toast,
-  } = useApp();
+  } = useUI();
+  const {
+    items,
+    groups,
+    deleteGroup,
+  } = useLibrary();
+  const { playItem, addToQueue } = usePlayback();
   const { pickFiles, onFilesChosen, inputRef } = useAddMedia();
   const [sort, setSort] = useState<SortKey>("newest");
   const [sortOpen, setSortOpen] = useState(false);

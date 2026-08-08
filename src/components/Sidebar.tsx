@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useApp } from "../store";
+import { useUI, useSettings, usePlayback, useLibrary } from "../store";
 import type { GroupKind, LibraryFilter } from "../types";
 import { confirmDialog, defaultGroupName } from "../lib/utils";
 import { Icon, type IconName } from "./Icon";
@@ -25,19 +25,21 @@ export function Sidebar() {
     setView,
     queueOpen,
     openQueue,
-    copilotOpen,
-    openCopilot,
     settingsOpen,
     setSettingsOpen,
+    toast,
+  } = useUI();
+  const {
     settings,
     updateSettings,
-    queue,
+  } = useSettings();
+  const { queue } = usePlayback();
+  const {
     items,
     groups,
     createGroup,
     deleteGroup,
-    toast,
-  } = useApp();
+  } = useLibrary();
 
   const [creating, setCreating] = useState<GroupKind | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -174,14 +176,6 @@ export function Sidebar() {
           <Icon name="list" size={18} />
           <span className="nav-item__label">Up Next</span>
           {queue.length > 0 && <span className="nav-item__count">{queue.length}</span>}
-        </button>
-        <button
-          className={`nav-item ${copilotOpen ? "nav-item--active" : ""}`}
-          onClick={() => openCopilot(!copilotOpen)}
-        >
-          <Icon name="sparkles" size={18} />
-          <span className="nav-item__label">AI Copilot</span>
-          <span className="nav-item__tag">AI</span>
         </button>
       </nav>
 

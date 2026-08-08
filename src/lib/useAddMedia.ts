@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { useApp } from "../store";
+import { useLibrary, useUI } from "../store";
 import { isTauri } from "./utils";
 
 export const MEDIA_EXTENSIONS = [
@@ -13,7 +13,8 @@ export const MEDIA_EXTENSIONS = [
  * browser (used for development and the web preview).
  */
 export function useAddMedia() {
-  const { addFiles, toast } = useApp();
+  const { addFiles } = useLibrary();
+  const { toast } = useUI();
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const pickFiles = useCallback(async () => {

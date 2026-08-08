@@ -1,22 +1,17 @@
-import type { CSSProperties } from "react";
-import { useApp } from "../store";
+import { type CSSProperties } from "react";
+import { useUI, useSettings, useLibrary } from "../store";
 import { useAddMedia } from "../lib/useAddMedia";
-import { isTauri } from "../lib/utils";
+import { guessType, hashHue, isTauri } from "../lib/utils";
 import { Icon } from "./Icon";
 import { Toggle } from "./QueuePanel";
+import type { MediaGroup, MediaItem } from "../types";
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export function SettingsModal() {
-  const {
-    settingsOpen,
-    setSettingsOpen,
-    settings,
-    updateSettings,
-    items,
-    clearLibrary,
-    toast,
-  } = useApp();
+  const { settingsOpen, setSettingsOpen, toast } = useUI();
+  const { settings, updateSettings } = useSettings();
+  const { items, groups, importItems, clearLibrary } = useLibrary();
   const { pickFiles, onFilesChosen, inputRef } = useAddMedia();
 
   if (!settingsOpen) return null;
@@ -40,6 +35,73 @@ export function SettingsModal() {
       clearLibrary();
       toast("Library cleared", "info");
     }
+  }
+
+  async function onExport() {
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      items,
+      groups,
+    };
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `frameo-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("Library exported", "success");
+  }
+
+  function onImport() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result as string);
+          if (Array.isArray(data.items)) {
+            const newItems = (data.items as MediaItem[])
+              .filter(
+                (i) => i && typeof i.id === "string" && typeof i.title === "string" && typeof i.path === "string",
+              )
+              // Normalize/backfill fields so a hand-edited or older export
+              // can't produce items that break filters or rendering.
+              .map((i) => ({
+                ...i,
+                type: i.type === "audio" || i.type === "video" ? i.type : guessType(i.path),
+                hue: typeof i.hue === "number" ? i.hue : hashHue(i.title),
+                addedAt: typeof i.addedAt === "number" ? i.addedAt : Date.now(),
+              }));
+            const newGroups = Array.isArray(data.groups)
+              ? (data.groups as MediaGroup[]).filter(
+                  (g) => g && typeof g.id === "string" && typeof g.name === "string" && Array.isArray(g.itemIds),
+                )
+              : [];
+            // Apply immediately through the store — no reload needed.
+            importItems(newItems, newGroups);
+            toast(
+              newItems.length === data.items.length
+                ? `Imported ${newItems.length} items`
+                : `Imported ${newItems.length} of ${data.items.length} items`,
+              "success",
+            );
+          } else {
+            toast("Invalid export file", "error");
+          }
+        } catch {
+          toast("Invalid JSON file", "error");
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
   }
 
   return (
@@ -123,20 +185,6 @@ export function SettingsModal() {
           </section>
 
           <section className="settings-section">
-            <h3 className="settings-section__title">
-              AI features
-              <span className="settings-section__tag">preview</span>
-            </h3>
-            <p className="settings-section__note">
-              Simulated previews of Frameo's on-device AI. Real inference (Whisper subtitles, scene detection, Copilot) ships in a future release.
-            </p>
-            <Toggle label="Auto-skip intros" checked={settings.skipIntros} onChange={(v) => updateSettings({ skipIntros: v })} />
-            <Toggle label="Scene detection markers" checked={settings.sceneMarkers} onChange={(v) => updateSettings({ sceneMarkers: v })} />
-            <Toggle label="AI subtitles" checked={settings.aiSubtitles} onChange={(v) => updateSettings({ aiSubtitles: v })} />
-            <Toggle label="Frameo Copilot" checked={settings.copilotEnabled} onChange={(v) => updateSettings({ copilotEnabled: v })} />
-          </section>
-
-          <section className="settings-section">
             <h3 className="settings-section__title">Library</h3>
             <div className="settings-row">
               <div className="settings-row__text">
@@ -146,6 +194,12 @@ export function SettingsModal() {
               <div className="settings-row__actions">
                 <button className="btn btn--ghost btn--sm" onClick={pickFiles}>
                   <Icon name="plus" size={14} /> Add files
+                </button>
+                <button className="btn btn--ghost btn--sm" onClick={onExport} disabled={items.length === 0}>
+                  <Icon name="folder" size={14} /> Export
+                </button>
+                <button className="btn btn--ghost btn--sm" onClick={onImport}>
+                  <Icon name="folder" size={14} /> Import
                 </button>
                 <button className="btn btn--ghost btn--sm btn--danger" onClick={onClear} disabled={items.length === 0}>
                   <Icon name="trash" size={14} /> Clear library

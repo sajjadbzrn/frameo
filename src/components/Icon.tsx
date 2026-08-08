@@ -15,8 +15,6 @@ export type IconName =
   | "clock"
   | "sliders"
   | "list"
-  | "sparkles"
-  | "robot"
   | "home"
   | "chevron-left"
   | "chevron-right"
@@ -112,20 +110,6 @@ const PATHS: Record<IconName, ReactNode> = {
       <circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" />
       <circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
       <circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" />
-    </>
-  ),
-  sparkles: (
-    <>
-      <path d="M12 3.2l1.7 4.4 4.4 1.7-4.4 1.7L12 15.4l-1.7-4.4-4.4-1.7 4.4-1.7z" fill="currentColor" stroke="none" />
-      <path d="M19 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="currentColor" stroke="none" />
-    </>
-  ),
-  robot: (
-    <>
-      <rect x="5" y="8" width="14" height="11" rx="3" />
-      <circle cx="9.5" cy="13" r="1.1" fill="currentColor" stroke="none" />
-      <circle cx="14.5" cy="13" r="1.1" fill="currentColor" stroke="none" />
-      <path d="M9.5 16h5M12 8V5.5M8.5 5.5h7" />
     </>
   ),
   home: (

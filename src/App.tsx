@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { AppProvider, useApp } from "./store";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
+import { AppProvider, usePlayback, useUI, useLibrary } from "./store";
 import { isTauri } from "./lib/utils";
 import { Icon } from "./components/Icon";
 import { Sidebar } from "./components/Sidebar";
@@ -7,16 +7,24 @@ import { TopBar } from "./components/TopBar";
 import { LibraryView } from "./components/LibraryView";
 import { PlayerView } from "./components/PlayerView";
 import { NowPlayingBar } from "./components/NowPlayingBar";
-import { QueuePanel } from "./components/QueuePanel";
-import { CopilotPanel } from "./components/CopilotPanel";
-import { SettingsModal } from "./components/SettingsModal";
+const QueuePanel = lazy(() => import("./components/QueuePanel").then(m => ({ default: m.QueuePanel })));
+const SettingsModal = lazy(() => import("./components/SettingsModal").then(m => ({ default: m.SettingsModal })));
 import { Toasts } from "./components/Toasts";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ShortcutOverlay } from "./components/ShortcutOverlay";
 import "./App.css";
 
 function Shell() {
   const {
     view,
     setView,
+    queueOpen,
+    openQueue,
+    settingsOpen,
+    setSettingsOpen,
+    toast,
+  } = useUI();
+  const {
     current,
     position,
     volume,
@@ -26,20 +34,41 @@ function Shell() {
     prev,
     seek,
     setVolume,
-    queueOpen,
-    openQueue,
-    copilotOpen,
-    openCopilot,
-    settingsOpen,
-    setSettingsOpen,
-    addFiles,
-    addRemoteUrls,
     playItem,
     addToQueue,
-    toast,
-  } = useApp();
+  } = usePlayback();
+  const { addFiles, addRemoteUrls } = useLibrary();
 
   const [dragActive, setDragActive] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  /* ---------------- Tauri: tray & global media key events ---------------- */
+  useEffect(() => {
+    // Tauri-only — the event API throws outside the desktop runtime.
+    if (!isTauri()) return;
+
+    let unlistenTray: (() => void) | undefined;
+    let unlistenShortcut: (() => void) | undefined;
+
+    import("@tauri-apps/api/event")
+      .then(({ listen }) => {
+        listen("tray:play-pause", () => togglePlay()).then((fn) => { unlistenTray = fn; }).catch(() => {});
+        listen("tray:next", () => next(true)).catch(() => {});
+        listen("tray:prev", () => prev()).catch(() => {});
+        listen("shortcut", (e) => {
+          const key = e.payload as string;
+          if (key === "MediaPlayPause") togglePlay();
+          else if (key === "MediaNextTrack") next(true);
+          else if (key === "MediaPrevTrack") prev();
+        }).then((fn) => { unlistenShortcut = fn; }).catch(() => {});
+      })
+      .catch(() => {});
+
+    return () => {
+      unlistenTray?.();
+      unlistenShortcut?.();
+    };
+  }, [togglePlay, next, prev]);
 
   // Latest values for the global keydown handler, so the listener doesn't
   // re-attach on every playback tick.
@@ -77,51 +106,47 @@ function Shell() {
           break;
         case "m":
         case "M":
-          if (current) toggleMute();
+          if (current && !typing) toggleMute();
           break;
         case "ArrowLeft":
-          if (current && !queueOpen && !copilotOpen && !settingsOpen) {
+          if (current && !queueOpen && !settingsOpen) {
             e.preventDefault();
             seek(e.shiftKey ? positionRef.current - 60 : positionRef.current - 10);
           }
           break;
         case "ArrowRight":
-          if (current && !queueOpen && !copilotOpen && !settingsOpen) {
+          if (current && !queueOpen && !settingsOpen) {
             e.preventDefault();
             seek(e.shiftKey ? positionRef.current + 60 : positionRef.current + 10);
           }
           break;
         case "ArrowUp":
-          if (current && !queueOpen && !copilotOpen && !settingsOpen) {
+          if (current && !queueOpen && !settingsOpen) {
             e.preventDefault();
             setVolume(volumeRef.current + 0.05);
           }
           break;
         case "ArrowDown":
-          if (current && !queueOpen && !copilotOpen && !settingsOpen) {
+          if (current && !queueOpen && !settingsOpen) {
             e.preventDefault();
             setVolume(volumeRef.current - 0.05);
           }
           break;
         case "n":
         case "N":
-          if (current) next(true);
+          if (current && !typing) next(true);
           break;
         case "p":
         case "P":
-          if (current) prev();
-          break;
-        case "c":
-        case "C":
-          if (current && !typing) openCopilot(!copilotOpen);
+          if (current && !typing) prev();
           break;
         case "q":
         case "Q":
           if (!typing) openQueue(!queueOpen);
           break;
         case "Escape":
-          if (settingsOpen) setSettingsOpen(false);
-          else if (copilotOpen) openCopilot(false);
+          if (shortcutsOpen) setShortcutsOpen(false);
+          else if (settingsOpen) setSettingsOpen(false);
           else if (queueOpen) openQueue(false);
           else if (view === "player") setView("library");
           break;
@@ -129,6 +154,9 @@ function Shell() {
           if (e.ctrlKey && e.key.toLowerCase() === "o") {
             e.preventDefault();
             window.dispatchEvent(new CustomEvent("frameo:add-media"));
+          } else if (e.key === "?" && !typing) {
+            e.preventDefault();
+            setShortcutsOpen((s) => !s);
           }
       }
     };
@@ -137,8 +165,8 @@ function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [
     current, togglePlay, toggleMute, next, prev, seek, setVolume,
-    queueOpen, openQueue, copilotOpen, openCopilot,
-    settingsOpen, setSettingsOpen, view, setView,
+    queueOpen, openQueue,
+    settingsOpen, setSettingsOpen, view, setView, shortcutsOpen,
   ]);
 
   /* ---------------- drag & drop media & links ---------------- */
@@ -217,19 +245,29 @@ function Shell() {
 
   return (
     <div className={`app app--${view}`}>
-      <Sidebar />
+      <ErrorBoundary>
+        <Sidebar />
+      </ErrorBoundary>
       <main className="app-main">
         <TopBar />
         <div className="app-body">
-          <LibraryView hidden={playerActive} />
-          <PlayerView hidden={!playerActive} />
+          <ErrorBoundary>
+            <LibraryView hidden={playerActive} />
+          </ErrorBoundary>
+          <ErrorBoundary>
+            <PlayerView hidden={!playerActive} />
+          </ErrorBoundary>
         </div>
       </main>
 
-      <QueuePanel />
-      <CopilotPanel />
-      <SettingsModal />
+      <Suspense>
+        <QueuePanel />
+      </Suspense>
+      <Suspense>
+        <SettingsModal />
+      </Suspense>
       <Toasts />
+      <ShortcutOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       {view === "library" && current && <NowPlayingBar />}
 

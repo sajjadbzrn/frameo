@@ -40,11 +40,6 @@ export interface Settings {
   autoplayNext: boolean;
   resumePlayback: boolean;
   loop: boolean;
-  /* ---- AI features (simulated) ---- */
-  skipIntros: boolean;
-  sceneMarkers: boolean;
-  aiSubtitles: boolean;
-  copilotEnabled: boolean;
 }
 
 export interface Toast {
@@ -61,8 +56,3 @@ export type LibraryFilter =
   | "recent"
   | "favorite"
   | { kind: GroupKind; id: string };
-
-export interface Scene {
-  start: number;
-  label: string;
-}

@@ -1,22 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { useApp } from "../store";
-import { computeScenes, formatTime, posterInitials } from "../lib/utils";
-import { AudioVisualizer } from "./AudioVisualizer";
+import { useCallback, useEffect, useRef, useState, lazy, Suspense, type CSSProperties } from "react";
+import { usePlayback, useSettings, useUI, useLibrary } from "../store";
+import { formatTime, posterInitials } from "../lib/utils";
+import { generateThumbnails, nearestThumbnail } from "../lib/thumbnails";
+const AudioVisualizer = lazy(() => import("./AudioVisualizer").then(m => ({ default: m.AudioVisualizer })));
 import { Icon } from "./Icon";
+import { ContextMenu } from "./ContextMenu";
+import { SubtitleTrack } from "./SubtitleTrack";
+import { MediaInfo } from "./MediaInfo";
+import { parseSubtitles, type SubtitleCue } from "../lib/subtitles";
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
-
-const CAPTION_LINES = [
-  "…and that's when everything changed.",
-  "We're not going back. Not after this.",
-  "Stay with me. Just a little longer.",
-  "I knew you'd find me here.",
-  "The signal's gone. We're on our own.",
-  "One last look — then we move.",
-  "Nobody has to know.",
-  "It was never about the money.",
-  "Trust me. I've done this before.",
-];
 
 export function PlayerView({ hidden }: { hidden: boolean }) {
   const {
@@ -33,7 +26,6 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
     shuffle,
     ended,
     error,
-    settings,
     togglePlay,
     next,
     prev,
@@ -43,13 +35,12 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
     setRate,
     toggleLoop,
     toggleShuffle,
-    setView,
-    openCopilot,
-    copilotOpen,
     queue,
     queueIndex,
-    removeItem,
-  } = useApp();
+  } = usePlayback();
+  const { settings } = useSettings();
+  const { setView } = useUI();
+  const { removeItem } = useLibrary();
 
   const theaterRef = useRef<HTMLDivElement | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -58,12 +49,23 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
   const [rateOpen, setRateOpen] = useState(false);
   const [hover, setHover] = useState<{ pct: number; time: number } | null>(null);
   const [waiting, setWaiting] = useState(false);
-  const [introSkipped, setIntroSkipped] = useState<string | null>(null);
+  const [thumbnails, setThumbnails] = useState<string[]>([]);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
+  const [mediaInfoOpen, setMediaInfoOpen] = useState(false);
 
-  const scenes = useMemo(
-    () => (current ? computeScenes(current.id, duration) : []),
-    [current, duration],
-  );
+  /* ---------- thumbnail generation ---------- */
+  useEffect(() => {
+    if (!current || duration <= 0) return;
+    const video = videoRef.current;
+    if (!video) return;
+    let cancelled = false;
+    generateThumbnails(video, duration, 20).then((frames) => {
+      if (!cancelled) setThumbnails(frames);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, Math.round(duration)]);
 
   /* ---------- auto-hide controls ---------- */
   useEffect(() => {
@@ -141,22 +143,23 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
     };
   }, [videoRef]);
 
-  /* ---------- keyboard: fullscreen ---------- */
+  /* ---------- keyboard: fullscreen (video only) ---------- */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (current?.type !== "video") return;
       if (e.key === "f" || e.key === "F") {
         if (!(e.target instanceof HTMLInputElement)) toggleFullscreen();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleFullscreen]);
+  }, [toggleFullscreen, current?.type]);
 
   if (!current) {
     return (
       <section className={`player ${hidden ? "is-hidden" : ""}`}>
         <div className="theater theater--empty">
-          <Icon name="robot" size={40} />
+          <Icon name="film" size={40} />
           <p>Nothing playing yet</p>
           <button className="btn btn--primary" onClick={() => setView("library")}>
             Browse library
@@ -168,26 +171,8 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
 
   const pct = duration > 0 ? (position / duration) * 100 : 0;
   const bufPct = duration > 0 ? (buffered / duration) * 100 : 0;
-  const introEnd = Math.min(90, duration * 0.06);
-  const showSkip =
-    current.type === "video" &&
-    settings.skipIntros &&
-    !ended &&
-    !error &&
-    duration > 0 &&
-    position > 3 &&
-    position < introEnd &&
-    introSkipped !== current.id;
   const nextIndex = queueIndex + 1 < queue.length ? queueIndex + 1 : settings.loop ? 0 : -1;
   const nextItem = nextIndex >= 0 ? queue[nextIndex] : null;
-  const caption =
-    settings.aiSubtitles &&
-    current.type === "video" &&
-    playing &&
-    !muted &&
-    duration > 0
-      ? CAPTION_LINES[Math.floor(position / 6) % CAPTION_LINES.length]
-      : null;
 
   const theaterStyle = { "--h": current.hue } as CSSProperties;
 
@@ -198,6 +183,7 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
         className={`theater ${fullscreen ? "theater--fullscreen" : ""}`}
         style={theaterStyle}
         onMouseMove={onMove}
+        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       >
         <video
           ref={videoRef}
@@ -211,9 +197,12 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
         {/* Audio visualization (real Web Audio analyser reacting to the music) */}
         {current.type === "audio" && (
           <div className={`theater__audio ${playing ? "is-playing" : "is-paused"}`}>
-            <AudioVisualizer />
+            <Suspense fallback={null}>
+              <AudioVisualizer />
+            </Suspense>
             <div className="theater__disc" style={theaterStyle} aria-hidden="true">
               <span className="theater__disc-initials">{posterInitials(current.title)}</span>
+              <span className="theater__disc-sheen" />
             </div>
           </div>
         )}
@@ -243,14 +232,6 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
               </p>
             </div>
           </div>
-          <button
-            className={`btn btn--glass ${copilotOpen ? "btn--active" : ""}`}
-            onClick={() => openCopilot(!copilotOpen)}
-            title="Frameo Copilot (C)"
-          >
-            <Icon name="sparkles" size={16} />
-            <span className="btn--icon-label">Copilot</span>
-          </button>
         </div>
 
         {/* center play/pause */}
@@ -262,20 +243,9 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
           <Icon name={playing ? "pause" : "play"} size={30} />
         </button>
 
-        {/* skip intro */}
-        {showSkip && (
-          <button className="theater__skip" onClick={() => { seek(introEnd); setIntroSkipped(current.id); }}>
-            <span>Skip intro</span>
-            <Icon name="next" size={14} />
-          </button>
-        )}
-
-        {/* AI captions */}
-        {caption && (
-          <div className="theater__caption">
-            <span className="theater__caption-text">{caption}</span>
-            <span className="theater__caption-tag">AI captions</span>
-          </div>
+        {/* Captions — manual .srt/.vtt subtitles */}
+        {subtitles.length > 0 && (
+          <SubtitleTrack cues={subtitles} time={position} />
         )}
 
         {/* bottom chrome */}
@@ -289,17 +259,6 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
             }}
             onMouseLeave={() => setHover(null)}
           >
-            {settings.sceneMarkers &&
-              scenes.map((s) => (
-                <button
-                  key={s.start}
-                  className="seek__marker"
-                  style={{ left: `${(s.start / (duration || 1)) * 100}%` }}
-                  title={s.label}
-                  onClick={(e) => { e.stopPropagation(); seek(s.start); }}
-                  aria-label={`Jump to ${s.label}`}
-                />
-              ))}
             <input
               className="seek__input"
               type="range"
@@ -313,9 +272,20 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
               aria-label="Seek"
             />
             {hover && (
-              <span className="seek__tooltip" style={{ left: `${hover.pct}%` }}>
-                {formatTime(hover.time)}
-              </span>
+              <>
+                {thumbnails.length > 0 && hover.time > 0 && (
+                  <span
+                    className="seek__thumb"
+                    style={{
+                      left: `${hover.pct}%`,
+                      backgroundImage: `url(${thumbnails[nearestThumbnail(hover.time, duration, thumbnails.length)]})`,
+                    }}
+                  />
+                )}
+                <span className="seek__tooltip" style={{ left: `${hover.pct}%` }}>
+                  {formatTime(hover.time)}
+                </span>
+              </>
             )}
           </div>
 
@@ -374,20 +344,56 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
                   </>
                 )}
               </div>
+              {current.type === "video" && (
+                <button
+                  className={`btn btn--glass btn--icon ${subtitles.length > 0 ? "btn--accent" : ""}`}
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = ".srt,.vtt";
+                    input.onchange = () => {
+                      const file = input.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        try {
+                          const cues = parseSubtitles(reader.result as string);
+                          if (cues.length > 0) {
+                            setSubtitles(cues);
+                          }
+                        } catch { /* ignore */ }
+                      };
+                      reader.readAsText(file);
+                    };
+                    input.click();
+                  }}
+                  title={subtitles.length > 0 ? "Subtitles loaded" : "Load subtitles (.srt/.vtt)"}
+                  aria-label="Load subtitles"
+                >
+                  <Icon name="info" size={17} />
+                </button>
+              )}
               <button className={`btn btn--glass btn--icon ${loop ? "btn--accent" : ""}`} onClick={toggleLoop} title="Loop" aria-label="Loop">
                 <Icon name="repeat" size={17} />
               </button>
-              <button className={`btn btn--glass btn--icon ${shuffle ? "btn--accent" : ""}`} onClick={toggleShuffle} title="Shuffle" aria-label="Shuffle">
-                <Icon name="shuffle" size={17} />
-              </button>
-              {"pictureInPictureEnabled" in document && (
+              {current.type === "audio" && (
+                <button className={`btn btn--glass btn--icon ${shuffle ? "btn--accent" : ""}`} onClick={toggleShuffle} title="Shuffle" aria-label="Shuffle">
+                  <Icon name="shuffle" size={17} />
+                </button>
+              )}
+              {current.type === "video" && "pictureInPictureEnabled" in document && (
                 <button className="btn btn--glass btn--icon" onClick={togglePip} title="Picture in picture" aria-label="Picture in picture">
                   <Icon name="pip" size={17} />
                 </button>
               )}
-              <button className="btn btn--glass btn--icon" onClick={toggleFullscreen} title="Fullscreen (F)" aria-label="Fullscreen">
-                <Icon name={fullscreen ? "fullscreen-exit" : "fullscreen"} size={17} />
+              <button className="btn btn--glass btn--icon" onClick={() => setMediaInfoOpen(true)} title="Media info" aria-label="Media info">
+                <Icon name="sliders" size={17} />
               </button>
+              {current.type === "video" && (
+                <button className="btn btn--glass btn--icon" onClick={toggleFullscreen} title="Fullscreen (F)" aria-label="Fullscreen">
+                  <Icon name={fullscreen ? "fullscreen-exit" : "fullscreen"} size={17} />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -451,6 +457,20 @@ export function PlayerView({ hidden }: { hidden: boolean }) {
           </div>
         )}
       </div>
+      <ContextMenu
+        items={[
+          ...(current.type === "video"
+            ? [
+                { label: "Toggle fullscreen", icon: <Icon name="fullscreen" size={15} />, onClick: toggleFullscreen },
+                { label: "Picture in picture", icon: <Icon name="pip" size={15} />, onClick: togglePip, dividerAfter: true },
+              ]
+            : []),
+          { label: "Remove from library", icon: <Icon name="trash" size={15} />, onClick: () => { removeItem(current.id); setView("library"); }, danger: true },
+        ]}
+        position={ctxMenu}
+        onClose={() => setCtxMenu(null)}
+      />
+      <MediaInfo open={mediaInfoOpen} onClose={() => setMediaInfoOpen(false)} />
     </section>
   );
 }

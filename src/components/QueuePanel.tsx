@@ -1,22 +1,19 @@
 import type { CSSProperties } from "react";
-import { useApp } from "../store";
+import { useUI, usePlayback, useSettings } from "../store";
 import { formatTime, posterInitials } from "../lib/utils";
 import { Icon } from "./Icon";
 
 export function QueuePanel() {
+  const { queueOpen, openQueue, toast } = useUI();
   const {
-    queueOpen,
-    openQueue,
     queue,
     queueIndex,
     playAt,
     removeFromQueue,
     current,
-    settings,
-    updateSettings,
     clearQueue,
-    toast,
-  } = useApp();
+  } = usePlayback();
+  const { settings, updateSettings } = useSettings();
 
   if (!queueOpen) return null;
 

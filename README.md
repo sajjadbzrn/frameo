@@ -1,17 +1,16 @@
-# 🎬 Frameo — AI Media Player
+# 🎬 Frameo — Media Player
 
-A next-generation media player desktop app built with **Tauri 2**, **React 19** and **Vite**. This is the MVP: a polished media library + player with simulated on-device AI features, designed so real inference (Whisper subtitles, scene detection, Copilot) can drop in later.
+A fast, lightweight desktop media player built with **Tauri 2**, **React 19** and **Vite**. No AI, no ML models, no bloat — just a polished media library and player that stays small and responsive.
 
-## ✨ What's in the MVP
+## ✨ Features
 
 - **Media library** — add files via native file dialog, drag & drop, or the `Ctrl+O` shortcut; filter (All / Videos / Music / Recently Played), search, sort; auto-generated poster art, durations and resume badges.
-- **Player** — custom controls (seek with buffering + scene markers, volume, speed, loop, shuffle, PiP, fullscreen), auto-hiding chrome, keyboard shortcuts, end-of-playback "Up Next" overlay, and a mini now-playing bar that keeps playing while you browse.
+- **Player** — custom controls (seek with buffering + hover thumbnails, volume, speed, loop, shuffle, PiP, fullscreen), auto-hiding chrome, keyboard shortcuts, end-of-playback "Up Next" overlay, and a mini now-playing bar that keeps playing while you browse.
+- **Manual subtitles** — load `.srt` / `.vtt` files for any video.
 - **Up Next queue** — playlist management with autoplay, loop, shuffle and clear.
-- **AI Copilot (simulated preview)** — analyzes the current item (genre, mood, scene count, key moments), one-tap enhancement toggles (AI subtitles, scene markers, auto-skip intros) and a chat assistant.
-- **Settings** — dark/light themes, default volume & speed, playback preferences, AI feature toggles, library management.
+- **Settings** — dark/light themes, default volume & speed, playback preferences, library management (export / import / clear).
 - **Persistence** — library, settings and resume positions are stored locally; playback resumes where you left off.
-
-> The AI features are simulated previews. Real on-device inference ships in a future release.
+- **Privacy & size** — 100% offline, zero telemetry, zero bundled model files.
 
 ## 🚀 Run it
 
@@ -43,7 +42,6 @@ cd src-tauri && cargo check   # verify the Rust side
 | `M` | Mute |
 | `N` / `P` | Next / previous |
 | `F` | Fullscreen (in player) |
-| `C` | Toggle AI Copilot |
 | `Q` | Toggle Up Next |
 | `Esc` | Close panel / back to library |
 | `Ctrl+O` | Add files |
@@ -52,9 +50,9 @@ cd src-tauri && cargo check   # verify the Rust side
 
 ```
 src/
-  store.tsx              # app state: library, queue, playback engine, settings, toasts
-  lib/                   # utils, media-type detection, scene simulation, add-media hook
+  store/                 # app state: library, queue, playback engine, settings, ui
+  lib/                   # utils, media-type detection, subtitles, thumbnails, add-media hook
   components/            # Sidebar, LibraryView, PlayerView, NowPlayingBar, QueuePanel,
-                         # CopilotPanel, SettingsModal, Toasts, MediaCard, Icon
+                         # SettingsModal, MediaInfo, Toasts, MediaCard, Icon
 src-tauri/               # Tauri 2 shell (dialog plugin, asset protocol for local playback)
 ```

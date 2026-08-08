@@ -1,29 +1,28 @@
 import { useState, type CSSProperties, type MouseEvent } from "react";
-import { useApp } from "../store";
+import { usePlayback, useUI, useLibrary } from "../store";
 import type { MediaItem } from "../types";
 import { defaultGroupName, formatBytes, formatTime, posterInitials } from "../lib/utils";
 import { Icon } from "./Icon";
+import { ContextMenu } from "./ContextMenu";
 
 interface Props {
   item: MediaItem;
 }
 
 export function MediaCard({ item }: Props) {
+  const { playItem, addToQueue, resumeAt } = usePlayback();
+  const { toast, openQueue } = useUI();
   const {
-    playItem,
-    addToQueue,
     removeItem,
-    toast,
-    resumeAt,
-    openQueue,
     groups,
     createGroup,
     addToGroup,
     removeFromGroup,
     toggleFavorite,
-  } = useApp();
+  } = useLibrary();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+  const [ctxMenuPos, setCtxMenuPos] = useState<{ x: number; y: number } | null>(null);
   const resume = resumeAt(item.path);
 
   const kind = item.type === "audio" ? "playlist" : "collection";
@@ -58,7 +57,11 @@ export function MediaCard({ item }: Props) {
   }
 
   return (
-    <div className="card" style={{ "--h": item.hue } as CSSProperties}>
+    <div
+      className="card"
+      style={{ "--h": item.hue } as CSSProperties}
+      onContextMenu={(e) => { e.preventDefault(); setCtxMenuPos({ x: e.clientX, y: e.clientY }); }}
+    >
       <div
         className="card__poster"
         onClick={() => playItem(item)}
@@ -180,6 +183,16 @@ export function MediaCard({ item }: Props) {
           {item.size ? ` · ${formatBytes(item.size)}` : ""}
         </p>
       </div>
+      <ContextMenu
+        items={[
+          { label: "Play", icon: <Icon name="play" size={14} />, onClick: () => playItem(item) },
+          { label: "Add to Up Next", icon: <Icon name="plus" size={14} />, onClick: () => { addToQueue(item); openQueue(true); toast("Added to Up Next"); }, dividerAfter: true },
+          { label: item.favorite ? "Remove from favorites" : "Add to favorites", icon: <Icon name="heart" size={14} />, onClick: () => toggleFavorite(item.id), dividerAfter: true },
+          { label: "Remove from library", icon: <Icon name="trash" size={14} />, onClick: () => { removeItem(item.id); toast(`Removed "${item.title}" from library`, "info"); }, danger: true },
+        ]}
+        position={ctxMenuPos}
+        onClose={() => setCtxMenuPos(null)}
+      />
     </div>
   );
 }
